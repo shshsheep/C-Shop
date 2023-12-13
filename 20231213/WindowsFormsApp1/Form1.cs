@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -14,6 +15,8 @@ namespace WindowsFormsApp1
 {
     public partial class Form1 : Form
     {
+        private Point matchPoint1;  // 存儲 button1 的匹配座標
+        private Point matchPoint2;  // 存儲 button4 的匹配座標
         public Form1()
         {
             InitializeComponent();
@@ -28,14 +31,34 @@ namespace WindowsFormsApp1
                 if (openFileDialog.ShowDialog() == DialogResult.OK)
                 {
                     Bitmap mybitmap = new Bitmap(openFileDialog.FileName);
-                    
+
                     this.pictureBox1.Image = mybitmap;
 
                     // 找到紅點座標
-                    Point redPoint1 = FindRedPointCenter(mybitmap, Color.FromArgb(255,0,0));
+                    Point redPoint1 = FindRedPointCenter(mybitmap, Color.FromArgb(255, 0, 0));
+
+                    // 切出紅點附近小塊圖像
+                    Rectangle templateRect1 = new Rectangle(redPoint1.X - 20, redPoint1.Y - 20, 40, 40); // 設定切割範圍
+                    Bitmap templateImage1 = CropImage(mybitmap, templateRect1);
 
                     // 顯示座標
                     label5.Text = $"紅點座標: ({redPoint1.X}, {redPoint1.Y})";
+
+                    // 顯示切割後的模板圖像
+                    pictureBox3.Image = templateImage1;
+
+                    // 轉換模板圖像為 Color 類型的二維數組
+                    Color[][] templateArray = ConvertBitmapToColorArray(templateImage1);
+
+                    // 轉換主圖像為 Color 類型的二維數組
+                    Color[][] mainImageArray = ConvertBitmapToColorArray(mybitmap);
+
+                    // 計算特徵模板匹配
+                    matchPoint1 = CalculateTemplateMatchingSAD(mainImageArray, templateArray);
+
+
+                    // 顯示匹配座標
+                    label3.Text = $"匹配座標: ({matchPoint1.X}, {matchPoint1.Y})";
 
                 }
             }
@@ -53,14 +76,34 @@ namespace WindowsFormsApp1
                 if (openFileDialog.ShowDialog() == DialogResult.OK)
                 {
                     Bitmap mybitmap = new Bitmap(openFileDialog.FileName);
-                    
+
                     this.pictureBox2.Image = mybitmap;
 
                     // 找到紅點座標
                     Point redPoint2 = FindRedPointCenter(mybitmap, Color.FromArgb(255, 0, 0));
 
+                    // 切出紅點附近小塊圖像
+                    Rectangle templateRect2 = new Rectangle(redPoint2.X - 20, redPoint2.Y - 20, 40, 40); // 設定切割範圍
+                    Bitmap templateImage2 = CropImage(mybitmap, templateRect2);
+
                     // 顯示座標
                     label6.Text = $"紅點座標: ({redPoint2.X}, {redPoint2.Y})";
+
+                    // 顯示切割後的模板圖像
+                    pictureBox4.Image = templateImage2;
+
+                    // 轉換模板圖像為 Color 類型的二維數組
+                    Color[][] templateArray = ConvertBitmapToColorArray(templateImage2);
+
+                    // 轉換主圖像為 Color 類型的二維數組
+                    Color[][] mainImageArray = ConvertBitmapToColorArray(mybitmap);
+
+                    // 計算特徵模板匹配
+                    matchPoint2 = CalculateTemplateMatchingSAD(mainImageArray, templateArray);
+
+
+                    // 顯示匹配座標
+                    label8.Text = $"匹配座標: ({matchPoint2.X}, {matchPoint2.Y})";
 
                 }
             }
@@ -107,44 +150,115 @@ namespace WindowsFormsApp1
             throw new Exception($"未找到目標顏色 {targetColor}");
         }
 
+        private Bitmap CropImage(Bitmap source, Rectangle cropRect)
+        {
+            // 切割圖像
+            Bitmap croppedImage = source.Clone(cropRect, source.PixelFormat);
+            return croppedImage;
+        }
+
+        private Color[][] ConvertBitmapToColorArray(Bitmap bitmap)
+        {
+            int width = bitmap.Width;
+            int height = bitmap.Height;
+
+            Color[][] colorArray = new Color[height][];
+
+            for (int y = 0; y < height; y++)
+            {
+                colorArray[y] = new Color[width];
+
+                for (int x = 0; x < width; x++)
+                {
+                    colorArray[y][x] = bitmap.GetPixel(x, y);
+                }
+            }
+
+            return colorArray;
+        }
+
+        private Point CalculateTemplateMatchingSAD(Color[][] mainImage, Color[][] template)
+        {
+            int minSAD = int.MaxValue;
+            Point bestPosition = Point.Empty;
+
+            int S_rows = mainImage.Length;
+            int S_cols = mainImage[0].Length;
+            int T_rows = template.Length;
+            int T_cols = template[0].Length;
+
+            for (int x = 0; x <= S_cols - T_cols; x++)
+            {
+                for (int y = 0; y <= S_rows - T_rows; y++)
+                {
+                    int SAD = 0;
+
+                    for (int j = 0; j < T_cols; j++)
+                    {
+                        for (int i = 0; i < T_rows; i++)
+                        {
+                            Color p_SearchIMG = mainImage[y + i][x + j];
+                            Color p_TemplateIMG = template[i][j];
+
+                            // 計算每個色道的 SAD，但保持在 0 到 255 之間
+                            SAD += Math.Max(0, Math.Min(255, Math.Abs(p_SearchIMG.R - p_TemplateIMG.R)));
+                            SAD += Math.Max(0, Math.Min(255, Math.Abs(p_SearchIMG.G - p_TemplateIMG.G)));
+                            SAD += Math.Max(0, Math.Min(255, Math.Abs(p_SearchIMG.B - p_TemplateIMG.B)));
+                        }
+                    }
+
+                    if (minSAD > SAD)
+                    {
+                        minSAD = SAD;
+
+                        bestPosition = new Point(x, y);
+                    }
+                }
+            }
+
+            return bestPosition;
+        }
+
 
         private void button3_Click(object sender, EventArgs e)
         {
             try
             {
-                // 檢查是否有選擇圖片
+                
+                // 檢查是否已選擇兩張圖片
                 if (pictureBox1.Image == null || pictureBox2.Image == null)
                 {
-                    MessageBox.Show("請先選擇兩張圖片");
+                    MessageBox.Show("請先選擇兩張圖片。");
                     return;
                 }
+                
+                // 從 button1 獲得匹配座標
+                //Point matchPoint1 = ParsePoint(label3.Text);
 
-                // 找到紅點中心座標
-                Point redPoint1Center = FindRedPointCenter(new Bitmap(pictureBox1.Image), Color.FromArgb(255, 0, 0));
-                Point redPoint2Center = FindRedPointCenter(new Bitmap(pictureBox2.Image), Color.FromArgb(255, 0, 0));
+                // 從 button4 獲得匹配座標
+                //Point matchPoint2 = ParsePoint(label8.Text);
 
-                // 讀取使用者輸入的基線值
+                // 從使用者輸入中讀取已知的基線值
                 if (!double.TryParse(textBox1.Text, out double knownBaseline))
                 {
-                    MessageBox.Show("請輸入有效的基線值");
+                    MessageBox.Show("請輸入有效的基線值。");
                     return;
                 }
 
                 // 已知的相機參數
                 double focalLength = 12.07; // 單位：mm
-                double sensorWidth = 7.6; // 單位：mm
-                int imageWidth = 2272; // 影像寬度
-                double pixelSize = 0.0033450704225352; // 像素大小，單位：mm
+                double pixelSize = 0.0033450704225352; // 像素大小，單位：mm 每像素
 
-                // 計算 disparity（兩像素間的距離）
-                double disparity = Math.Abs(redPoint2Center.X - redPoint1Center.X) * pixelSize;
+                // 計算視差（兩像素之間的距離）
+                double disparity = Math.Abs(matchPoint2.X - matchPoint1.X) * pixelSize;
 
                 // 計算深度（結果單位：mm）
                 double depth = (focalLength * knownBaseline) / disparity;
 
-
+                // 將深度值四捨五入到兩位小數
                 depth = Math.Round(depth, 2);
 
+                // 以公分顯示深度
                 label7.Text = $"深度: {depth} 公分";
             }
             catch (Exception ex)
@@ -153,16 +267,33 @@ namespace WindowsFormsApp1
             }
         }
 
-        /*private double CalculateDepth(Point point1, Point point2, double baseline)
+        /*
+        private Point ParsePoint(string text)
         {
-            // 計算兩點之間的水平距離，這可以視為基線
-            double horizontalDistance = Math.Abs(point2.X - point1.X);
+            try
+            {
+                text = text.Trim('(', ')');
+                string[] coordinates = text.Split(',');
 
-            // 計算深度（假設兩點在同一水平線上，且基線為已知值）
-            double depth = baseline / Math.Tan(Math.Atan(horizontalDistance / baseline));
+                Console.WriteLine($"Debug: Coordinates - {coordinates[0]}, {coordinates[1]}");
 
-            return depth;
-        }*/
+                if (coordinates.Length == 2 &&
+                    int.TryParse(coordinates[0].Trim(), out int x) &&
+                    int.TryParse(coordinates[1].Trim(), out int y))
+                {
+                    return new Point(x, y);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Debug: Error - {ex.Message}");
+            }
+
+            throw new FormatException("座標格式錯誤。");
+        }
+        */
+
+
         private void pictureBox1_Click(object sender, EventArgs e)
         {
 
@@ -172,5 +303,36 @@ namespace WindowsFormsApp1
         {
 
         }
+
+        
     }
 }
+/*
+minSAD = VALUE_MAX;
+
+for (size_t x = 0; x <= S_cols - T_cols; x++)
+{
+    for(size_t y = 0; y <= S_rows - T_rows; y++)
+    {
+        SAD = 0.0;
+
+        for (size_t j = 0; j < T_cols; j++)
+            for( size_t i = 0; i < T_rows; i++)
+            {
+                pixel p_SearchIMG = S[y + i][x + j];
+                pixel p_TemplateIMG = T[i][j];
+
+                SAD += abs(p_SearchIMG.Grey - p_TemplateIMG.Grey);
+            }
+
+        if(minSAD > SAD)
+        {
+            minSAD = SAD;
+
+            position.bestRow = y;
+            position.bestCol = x;
+            position.bestSAD = SAD;
+        }
+    }
+}
+*/
